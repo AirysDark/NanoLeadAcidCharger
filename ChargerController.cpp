@@ -9,6 +9,7 @@ ChargerController::ChargerController()
     _state(ChargerState::STARTUP),
     _temperatureLockout(false),
     _internalTemperatureLockout(false),
+    _remoteInhibit(false),
     _batteryVoltage(0.0f),
     _lastControlMs(0),
     _lastDebugMs(0),
@@ -30,6 +31,7 @@ void ChargerController::begin() {
     _internalTemperature.begin();
   }
 
+  _remoteInhibit = false;
   _batteryVoltage = readBatteryVoltage();
   _lastTurnedOffMs = millis();
 
@@ -144,6 +146,13 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
+  // A remote command may inhibit charging, but can never force charging ON.
+  // All voltage and temperature safety checks above remain authoritative.
+  if (_remoteInhibit) {
+    setCharger(false, ChargerState::REMOTE_OFF, nowMs);
+    return;
+  }
+
   // Normal voltage cutoff.
   if (_gateway.enabled() && _batteryVoltage >= CHARGE_CUTOFF_VOLTS) {
     setCharger(false, ChargerState::FULL_OFF, nowMs);
@@ -164,7 +173,8 @@ void ChargerController::runControl(unsigned long nowMs) {
   } else {
     // Keep the charger OFF and expose the current state to the debug module.
     if (_state == ChargerState::STARTUP ||
-        _state == ChargerState::CHARGING) {
+        _state == ChargerState::CHARGING ||
+        _state == ChargerState::REMOTE_OFF) {
       setCharger(false, ChargerState::FULL_OFF, nowMs);
     }
   }
@@ -193,6 +203,19 @@ void ChargerController::setCharger(bool enabled,
   if (outputChanged || oldState != newState) {
     Debug::printChargerChange(enabled, newState, _batteryVoltage);
   }
+}
+
+void ChargerController::setRemoteInhibit(bool inhibit) {
+  _remoteInhibit = inhibit;
+
+  if (_remoteInhibit) {
+    // STOP must act immediately; do not wait for the next control interval.
+    setCharger(false, ChargerState::REMOTE_OFF, millis());
+  }
+}
+
+bool ChargerController::remoteInhibited() const {
+  return _remoteInhibit;
 }
 
 float ChargerController::batteryVoltage() const {
