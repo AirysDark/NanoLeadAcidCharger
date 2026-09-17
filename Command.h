@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include <SoftwareSerial.h>
+#include "NanoSoftUart.h"
 #include "PinsAndConfig.h"
 
 class ChargerController;
@@ -33,7 +33,7 @@ private:
   };
 
   ChargerController& _charger;
-  SoftwareSerial _serial;
+  NanoSoftUart _serial;
   char _buffer[COMMAND_BUFFER_SIZE];
   uint8_t _length;
   bool _discardUntilNewline;
