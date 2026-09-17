@@ -9,7 +9,7 @@
 constexpr uint8_t PIN_CHARGE_MOSFET = 5;
 constexpr uint8_t PIN_BATTERY_VOLTAGE = A0;
 constexpr uint8_t PIN_TEMP_SENSOR = 2;
-constexpr uint8_t PIN_STATUS_LED = LED_BUILTIN;
+constexpr uint8_t PIN_STATUS_LED = 9;
 
 // -------------------- MOSFET behaviour -----------------------
 constexpr bool CHARGE_CONTROL_ACTIVE_HIGH = true;
@@ -41,6 +41,18 @@ constexpr float HARD_OVERVOLTAGE_VOLTS = 14.60f;
 constexpr float MIN_VALID_BATTERY_VOLTS = 8.0f;
 constexpr float MAX_VALID_BATTERY_VOLTS = 16.0f;
 constexpr unsigned long MIN_OFF_TIME_MS = 60000UL;
+
+// ---------------------- Status LED ---------------------------
+// D9 LED behaviour:
+//   Nano powered, not charging = solid ON
+//   Charging = short flashes
+//   Lower battery voltage = longer gap between flashes
+//   Near full = faster flashes
+constexpr float STATUS_LED_SLOW_VOLTAGE = 12.00f;
+constexpr float STATUS_LED_FAST_VOLTAGE = CHARGE_CUTOFF_VOLTS;
+constexpr unsigned long STATUS_LED_SLOW_INTERVAL_MS = 2000UL;
+constexpr unsigned long STATUS_LED_FAST_INTERVAL_MS = 250UL;
+constexpr unsigned long STATUS_LED_FLASH_ON_MS = 100UL;
 
 // ---------------- External battery temperature ---------------
 constexpr bool REQUIRE_TEMP_SENSOR = true;
@@ -94,7 +106,7 @@ constexpr unsigned long INTERNAL_TEMP_INTERVAL_MS = 1000UL;
 // -------------------- ESP8266 command link --------------------
 constexpr bool ENABLE_ESP_COMMANDS = true;
 constexpr uint8_t PIN_ESP_RX = 8;
-constexpr uint8_t PIN_ESP_TX = 9;
+constexpr uint8_t PIN_ESP_TX = 7;
 constexpr unsigned long ESP_COMMAND_BAUD = 9600UL;
 constexpr uint8_t COMMAND_BUFFER_SIZE = 48;
 
