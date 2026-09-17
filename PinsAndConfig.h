@@ -115,15 +115,14 @@ constexpr uint16_t INTERNAL_TEMP_RAW_MAX_VALID = 500;
 constexpr uint8_t INTERNAL_TEMP_ADC_SAMPLES = 16;
 
 // -------------------- Temperature sync test -------------------
-// TEMP SYNC is started from the ESP8266/web monitor. Temporarily place the
-// external temperature sensor next to the Nano inside the charger enclosure.
-// The Nano compares the external sensor with its internal sensor while normal
-// charger voltage/temperature safety continues to operate.
+// START TEMP SYNC performs two automatic stages with the external sensor
+// temporarily placed beside the Nano inside the charger case:
+//   1) 60 paired samples with charging inhibited (baseline)
+//   2) wait until the normal charger logic actually reports CHARGING, then
+//      collect another 60 paired samples while charging.
+// The final recommended offset is shown by the ESP8266 monitor for reflashing.
 constexpr unsigned long TEMP_SYNC_SAMPLE_INTERVAL_MS = 1000UL;
-
-// The web page marks the calibration result READY after this many valid
-// paired samples. At 1 sample/sec, 60 samples = about one minute.
-constexpr uint16_t TEMP_SYNC_MIN_SAMPLES = 60;
+constexpr uint16_t TEMP_SYNC_SAMPLES_PER_PHASE = 60;
 
 // ------------------------- Timing -----------------------------
 constexpr unsigned long CONTROL_INTERVAL_MS = 250UL;
