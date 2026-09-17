@@ -8,7 +8,7 @@
 // ------------------------- Pins ------------------------------
 constexpr uint8_t PIN_CHARGE_MOSFET = 5;
 constexpr uint8_t PIN_BATTERY_VOLTAGE = A0;
-constexpr uint8_t PIN_TEMP_SENSOR = 2;
+constexpr uint8_t PIN_TEMP_SENSOR = 3;
 constexpr uint8_t PIN_STATUS_LED = 9;
 
 // -------------------- MOSFET behaviour -----------------------
