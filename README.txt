@@ -5,16 +5,17 @@ PURPOSE
 -------
 Arduino Nano lead-acid charger supervisor with battery-voltage monitoring,
 external battery temperature monitoring, Nano/internal temperature monitoring,
-charger cutoff control, an ESP8266 UART command link, and guided calibration
-workflows for both the voltage divider and the Nano internal temperature sensor.
+charger cutoff control, an ESP8266 UART command link, a D9 charge-progress LED,
+and guided calibration workflows for both the voltage divider and the Nano
+internal temperature sensor.
 
 FILES
 -----
 NanoLeadAcidCharger.ino    - main sketch
 PinsAndConfig.h            - pins, thresholds and calibration values
-ChargerController.h/.cpp   - voltage, charging and safety logic
+ChargerController.h/.cpp   - voltage, charging, LED and safety logic
 Command.h/.cpp             - ESP8266 UART commands and calibration tests
-NanoSoftUart.h/.cpp        - local Nano software UART for D8/D9
+NanoSoftUart.h/.cpp        - local Nano software UART for D8 RX / D7 TX
 gateway.h/.cpp             - charger MOSFET/gate control
 TemperatureSensor.h/.cpp   - external DS18B20 battery-temperature sensor
 InternalTemperature.h/.cpp - ATmega328P internal temperature monitor
@@ -50,18 +51,37 @@ DEFAULT CONNECTIONS
 Nano D5 = charger cutoff control output
 Nano A0 = battery voltage divider
 Nano D2 = external temperature sensor signal
+Nano D9 = external power / charging-progress LED
 Nano D8 = RX from ESP8266
-Nano D9 = TX to ESP8266
+Nano D7 = TX to ESP8266
+
+Status LED:
+  Nano D9 -> resistor -> LED anode (+)
+  LED cathode (-) -> GND
+
+LED behaviour:
+  Nano powered, not charging = solid ON
+  Charging = short flashes
+  Lower battery voltage = larger gaps between flashes
+  Battery voltage closer to 14.40 V = faster flashes
+
+Default LED timing:
+  12.00 V or below = one 100 ms flash every 2000 ms
+  14.40 V or above = one 100 ms flash every 250 ms
+  Between those voltages = linearly increasing flash rate
 
 Battery divider:
   Battery + -> 33k -> A0 -> 10k -> Battery -
   A0 -> 0.1uF (104) -> Battery -
 
 ESP8266 UART:
-  Nano D9 TX -> 5V-to-3.3V divider -> ESP RX
+  Nano D7 TX -> 5V-to-3.3V divider -> ESP RX
   Nano D8 RX <- ESP TX
   Nano GND <-> ESP GND
   Baud = 9600
+
+IMPORTANT: D9 was previously the Nano UART TX pin. It is now reserved for the
+status LED. Move the Nano-to-ESP TX wire from D9 to D7.
 
 The Nano TX must be reduced to 3.3V before reaching the ESP8266 RX.
 
