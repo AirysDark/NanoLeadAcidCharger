@@ -2,6 +2,42 @@
 #include "PinsAndConfig.h"
 #include "Debug.h"
 
+namespace {
+unsigned long statusLedIntervalMs(float batteryVoltage) {
+  if (batteryVoltage <= STATUS_LED_SLOW_VOLTAGE) {
+    return STATUS_LED_SLOW_INTERVAL_MS;
+  }
+
+  if (batteryVoltage >= STATUS_LED_FAST_VOLTAGE) {
+    return STATUS_LED_FAST_INTERVAL_MS;
+  }
+
+  const float voltageSpan = STATUS_LED_FAST_VOLTAGE - STATUS_LED_SLOW_VOLTAGE;
+  const float position = (batteryVoltage - STATUS_LED_SLOW_VOLTAGE) / voltageSpan;
+  const float intervalSpan =
+      static_cast<float>(STATUS_LED_SLOW_INTERVAL_MS - STATUS_LED_FAST_INTERVAL_MS);
+
+  return static_cast<unsigned long>(
+      static_cast<float>(STATUS_LED_SLOW_INTERVAL_MS) - (position * intervalSpan));
+}
+
+void updateStatusLed(bool charging, float batteryVoltage, unsigned long nowMs) {
+  // Whenever the Nano is powered but the charger is not actively charging,
+  // leave the external D9 LED solid ON as the power indicator.
+  if (!charging) {
+    digitalWrite(PIN_STATUS_LED, HIGH);
+    return;
+  }
+
+  // While charging, flash briefly. The interval gets shorter as the battery
+  // voltage rises, so a low battery gives large gaps and a nearly-full battery
+  // flashes quickly.
+  const unsigned long intervalMs = statusLedIntervalMs(batteryVoltage);
+  const unsigned long phaseMs = nowMs % intervalMs;
+  digitalWrite(PIN_STATUS_LED, phaseMs < STATUS_LED_FLASH_ON_MS ? HIGH : LOW);
+}
+}  // namespace
+
 ChargerController::ChargerController()
   : _temperature(PIN_TEMP_SENSOR),
     _internalTemperature(),
@@ -20,7 +56,7 @@ void ChargerController::begin() {
   _gateway.begin();
 
   pinMode(PIN_STATUS_LED, OUTPUT);
-  digitalWrite(PIN_STATUS_LED, LOW);
+  digitalWrite(PIN_STATUS_LED, HIGH);
 
   analogReference(DEFAULT);
 
@@ -51,6 +87,8 @@ void ChargerController::update() {
     _batteryVoltage = readBatteryVoltage();
     runControl(nowMs);
   }
+
+  updateStatusLed(_gateway.enabled(), _batteryVoltage, nowMs);
 
   if (ENABLE_DEBUG && (nowMs - _lastDebugMs) >= DEBUG_INTERVAL_MS) {
     _lastDebugMs = nowMs;
@@ -182,7 +220,6 @@ void ChargerController::setCharger(bool enabled,
   }
 
   _state = newState;
-  digitalWrite(PIN_STATUS_LED, enabled ? HIGH : LOW);
 
   if (outputChanged || oldState != newState) {
     Debug::printChargerChange(enabled, newState, _batteryVoltage);
