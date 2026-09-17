@@ -74,9 +74,9 @@ Battery divider:
   Battery + -> 33k -> A0 -> 10k -> Battery -
   A0 -> 0.1uF (104) -> Battery -
 
-ESP8266 UART:
-  Nano D7 TX -> 5V-to-3.3V divider -> ESP RX
-  Nano D8 RX <- ESP TX
+ESP8266 normal charger UART:
+  Nano D7 TX -> 5V-to-3.3V divider -> ESP GPIO14 / D5 RX
+  Nano D8 RX <- ESP GPIO12 / D6 TX
   Nano GND <-> ESP GND
   Baud = 9600
 
@@ -84,6 +84,48 @@ IMPORTANT: D9 was previously the Nano UART TX pin. It is now reserved for the
 status LED. Move the Nano-to-ESP TX wire from D9 to D7.
 
 The Nano TX must be reduced to 3.3V before reaching the ESP8266 RX.
+
+WEB FIRMWARE UPDATE
+-------------------
+The companion AirysDark/NanoLeadAcidChargerSM ESP8266 firmware now has a
+FIRMWARE UPDATE page at:
+
+  http://192.168.4.1/firmware
+
+The Nano can be updated from that page with NanoLeadAcidCharger.bin.
+
+The normal D7/D8 charger UART remains connected. The ESP8266 also needs a
+separate connection to the Nano's standard Arduino bootloader pins:
+
+  ESP GPIO5 / D1 TX -> Nano D0 / RX directly
+  Nano D1 / TX -> 5V-to-3.3V divider -> ESP GPIO4 / D2 RX
+  ESP GPIO13 / D7 -> 1k -> logic N-MOSFET gate
+  MOSFET source -> GND
+  MOSFET drain  -> Nano RESET
+  MOSFET gate   -> 10k -> GND
+  ESP GND <-> Nano GND
+
+The reset MOSFET prevents the Nano's 5V RESET pull-up from being connected
+directly to an ESP8266 GPIO.
+
+When a Nano .bin is uploaded, the ESP8266 first sends STOP to the charger,
+resets the Nano into its bootloader, writes the application, verifies every
+flash page, and then restarts the Nano. The bootloader itself is not replaced.
+
+The updater automatically tries both common Nano bootloader baud rates:
+  57600  - classic/old Nano bootloader
+  115200 - Optiboot/new Nano bootloader
+
+Maximum web-update binary size is 30720 bytes.
+
+A GitHub Actions workflow is included at:
+  .github/workflows/build-firmware.yml
+
+It compiles the Nano and publishes:
+  NanoLeadAcidCharger.bin
+
+inside the NanoLeadAcidCharger-firmware workflow artifact. That raw .bin is the
+file intended for the ESP8266 web updater.
 
 DEFAULT CHARGER CONTROL
 -----------------------
