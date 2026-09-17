@@ -17,7 +17,6 @@ ChargerController::ChargerController()
 }
 
 void ChargerController::begin() {
-  // Gateway owns all MOSFET pin setup and switching.
   _gateway.begin();
 
   pinMode(PIN_STATUS_LED, OUTPUT);
@@ -35,9 +34,7 @@ void ChargerController::begin() {
   _batteryVoltage = readBatteryVoltage();
   _lastTurnedOffMs = millis();
 
-  // Start OFF. update() decides whether it is safe to charge.
   setCharger(false, ChargerState::STARTUP, millis());
-
   Debug::printStartup(ENABLE_INTERNAL_TEMP_MONITOR);
 }
 
@@ -72,7 +69,6 @@ void ChargerController::update() {
 }
 
 float ChargerController::readBatteryVoltage() {
-  // Throw away one reading after channel selection to let the ADC settle.
   (void)analogRead(PIN_BATTERY_VOLTAGE);
 
   uint32_t total = 0;
@@ -86,11 +82,12 @@ float ChargerController::readBatteryVoltage() {
       (BATTERY_DIVIDER_R_TOP_OHMS + BATTERY_DIVIDER_R_BOTTOM_OHMS) /
       BATTERY_DIVIDER_R_BOTTOM_OHMS;
 
-  return adcVolts * dividerRatio * BATTERY_VOLTAGE_CALIBRATION;
+  const float nominalBatteryVolts = adcVolts * dividerRatio;
+  return (nominalBatteryVolts * BATTERY_VOLTAGE_CALIBRATION) +
+         BATTERY_VOLTAGE_OFFSET_VOLTS;
 }
 
 void ChargerController::runControl(unsigned long nowMs) {
-  // Voltage reading must be believable.
   if (_batteryVoltage < MIN_VALID_BATTERY_VOLTS ||
       _batteryVoltage > MAX_VALID_BATTERY_VOLTS ||
       isnan(_batteryVoltage)) {
@@ -98,19 +95,16 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
-  // Hard voltage safety cutoff always wins.
   if (_batteryVoltage >= HARD_OVERVOLTAGE_VOLTS) {
     setCharger(false, ChargerState::OVERVOLTAGE_FAULT, nowMs);
     return;
   }
 
-  // External battery temperature sensor fault is fail-safe OFF if required.
   if (REQUIRE_TEMP_SENSOR && !_temperature.valid()) {
     setCharger(false, ChargerState::SENSOR_FAULT, nowMs);
     return;
   }
 
-  // Internal Nano temperature sensor fault is fail-safe OFF if required.
   if (ENABLE_INTERNAL_TEMP_MONITOR &&
       REQUIRE_INTERNAL_TEMP_MONITOR &&
       !_internalTemperature.valid()) {
@@ -118,7 +112,6 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
-  // External battery-temperature hysteresis.
   if (_temperature.valid()) {
     if (_temperature.celsius() >= TEMP_CUTOFF_C) {
       _temperatureLockout = true;
@@ -132,7 +125,6 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
-  // Nano/internal charger-temperature hysteresis.
   if (ENABLE_INTERNAL_TEMP_MONITOR && _internalTemperature.valid()) {
     if (_internalTemperature.celsius() >= INTERNAL_TEMP_CUTOFF_C) {
       _internalTemperatureLockout = true;
@@ -146,32 +138,25 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
-  // A remote command may inhibit charging, but can never force charging ON.
-  // All voltage and temperature safety checks above remain authoritative.
   if (_remoteInhibit) {
     setCharger(false, ChargerState::REMOTE_OFF, nowMs);
     return;
   }
 
-  // Normal voltage cutoff.
   if (_gateway.enabled() && _batteryVoltage >= CHARGE_CUTOFF_VOLTS) {
     setCharger(false, ChargerState::FULL_OFF, nowMs);
     return;
   }
 
-  // If already charging and no safety condition is active, keep charging.
   if (_gateway.enabled()) {
     _state = ChargerState::CHARGING;
     return;
   }
 
-  // Restart only after voltage has fallen below the restart threshold AND
-  // the minimum off-time has elapsed.
   const bool offTimeExpired = (nowMs - _lastTurnedOffMs) >= MIN_OFF_TIME_MS;
   if (_batteryVoltage <= CHARGE_RESTART_VOLTS && offTimeExpired) {
     setCharger(true, ChargerState::CHARGING, nowMs);
   } else {
-    // Keep the charger OFF and expose the current state to the debug module.
     if (_state == ChargerState::STARTUP ||
         _state == ChargerState::CHARGING ||
         _state == ChargerState::REMOTE_OFF) {
@@ -193,7 +178,6 @@ void ChargerController::setCharger(bool enabled,
       _lastTurnedOffMs = nowMs;
     }
   } else {
-    // Gateway owns the actual MOSFET pin and re-asserts its current state.
     _gateway.reassert();
   }
 
@@ -209,7 +193,6 @@ void ChargerController::setRemoteInhibit(bool inhibit) {
   _remoteInhibit = inhibit;
 
   if (_remoteInhibit) {
-    // STOP must act immediately; do not wait for the next control interval.
     setCharger(false, ChargerState::REMOTE_OFF, millis());
   }
 }
