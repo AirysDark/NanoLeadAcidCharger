@@ -27,7 +27,14 @@ Command::Command(ChargerController& charger)
   : _charger(charger),
     _serial(PIN_ESP_RX, PIN_ESP_TX),
     _length(0),
-    _discardUntilNewline(false) {
+    _discardUntilNewline(false),
+    _tempSyncActive(false),
+    _tempSyncStartMs(0),
+    _tempSyncLastSampleMs(0),
+    _tempSyncSamples(0),
+    _tempSyncDeltaSum(0.0f),
+    _tempSyncCurrentDelta(NAN),
+    _tempSyncAverageDelta(NAN) {
   _buffer[0] = '\0';
 }
 
@@ -48,6 +55,8 @@ void Command::update() {
   while (_serial.available() > 0) {
     handleChar(static_cast<char>(_serial.read()));
   }
+
+  updateTempSync(millis());
 }
 
 void Command::handleChar(char c) {
@@ -99,7 +108,6 @@ void Command::handleChar(char c) {
 }
 
 void Command::normalizeLine() {
-  // Trim leading whitespace.
   char* start = _buffer;
   while (*start != '\0' && isspace(static_cast<unsigned char>(*start))) {
     ++start;
@@ -109,13 +117,11 @@ void Command::normalizeLine() {
     memmove(_buffer, start, strlen(start) + 1U);
   }
 
-  // Trim trailing whitespace.
   size_t len = strlen(_buffer);
   while (len > 0U && isspace(static_cast<unsigned char>(_buffer[len - 1U]))) {
     _buffer[--len] = '\0';
   }
 
-  // Upper-case and collapse repeated spaces so commands are forgiving.
   char normalized[COMMAND_BUFFER_SIZE];
   size_t out = 0;
   bool previousWasSpace = false;
@@ -178,6 +184,21 @@ void Command::processLine() {
     return;
   }
 
+  if (strcmp(_buffer, "TSYNC START") == 0 || strcmp(_buffer, "TEMP SYNC START") == 0) {
+    startTempSync();
+    return;
+  }
+
+  if (strcmp(_buffer, "TSYNC STATUS") == 0 || strcmp(_buffer, "TEMP SYNC STATUS") == 0) {
+    sendTempSyncStatus();
+    return;
+  }
+
+  if (strcmp(_buffer, "TSYNC STOP") == 0 || strcmp(_buffer, "TEMP SYNC STOP") == 0) {
+    stopTempSync();
+    return;
+  }
+
   if (strcmp(_buffer, "STOP") == 0 ||
       strcmp(_buffer, "OFF") == 0 ||
       strcmp(_buffer, "CHARGE OFF") == 0) {
@@ -198,6 +219,82 @@ void Command::processLine() {
   }
 
   sendError(F("UNKNOWN_COMMAND"));
+}
+
+void Command::updateTempSync(unsigned long nowMs) {
+  if (!_tempSyncActive) {
+    return;
+  }
+
+  if ((nowMs - _tempSyncLastSampleMs) < TEMP_SYNC_SAMPLE_INTERVAL_MS) {
+    return;
+  }
+
+  _tempSyncLastSampleMs = nowMs;
+
+  // Only valid sensor pairs are used. A bad reading is skipped rather than
+  // corrupting the average.
+  if (!_charger.temperatureValid() || !_charger.internalTemperatureValid()) {
+    return;
+  }
+
+  const float externalC = _charger.batteryTemperatureC();
+  const float nanoC = _charger.internalTemperatureC();
+  const float deltaC = externalC - nanoC;
+
+  _tempSyncCurrentDelta = deltaC;
+  _tempSyncDeltaSum += deltaC;
+  ++_tempSyncSamples;
+  _tempSyncAverageDelta = _tempSyncDeltaSum / static_cast<float>(_tempSyncSamples);
+}
+
+void Command::startTempSync() {
+  if (!_charger.temperatureValid() || !_charger.internalTemperatureValid()) {
+    sendError(F("TSYNC_SENSOR_INVALID"));
+    return;
+  }
+
+  _tempSyncActive = true;
+  _tempSyncStartMs = millis();
+  _tempSyncLastSampleMs = _tempSyncStartMs;
+  _tempSyncSamples = 0;
+  _tempSyncDeltaSum = 0.0f;
+  _tempSyncCurrentDelta = NAN;
+  _tempSyncAverageDelta = NAN;
+
+  _serial.println(F("OK TSYNC=STARTED PLACE_EXTERNAL_SENSOR_NEAR_NANO"));
+}
+
+void Command::stopTempSync() {
+  _tempSyncActive = false;
+
+  if (_tempSyncSamples == 0) {
+    _serial.println(F("TSYNC RESULT=NO_VALID_SAMPLES"));
+    return;
+  }
+
+  _serial.print(F("TSYNC RESULT=STOPPED AVG="));
+  _serial.print(_tempSyncAverageDelta, 2);
+  _serial.print(F(" SAMPLES="));
+  _serial.print(_tempSyncSamples);
+  _serial.print(F(" READY="));
+  _serial.print(tempSyncReady() ? F("YES") : F("NO"));
+  _serial.print(F(" RECOMMENDED_OFFSET="));
+  _serial.println(tempSyncRecommendedOffset(), 2);
+}
+
+bool Command::tempSyncReady() const {
+  return _tempSyncSamples >= TEMP_SYNC_MIN_SAMPLES;
+}
+
+float Command::tempSyncRecommendedOffset() const {
+  if (_tempSyncSamples == 0 || isnan(_tempSyncAverageDelta)) {
+    return NAN;
+  }
+
+  // The displayed Nano temperature already includes the configured offset.
+  // Therefore the new absolute offset is current offset + measured difference.
+  return INTERNAL_TEMP_CALIBRATION_OFFSET_C + _tempSyncAverageDelta;
 }
 
 void Command::sendStatus() {
@@ -225,7 +322,10 @@ void Command::sendStatus() {
   _serial.print(stateToken(_charger.state()));
 
   _serial.print(F(" MODE="));
-  _serial.println(_charger.remoteInhibited() ? F("STOP") : F("AUTO"));
+  _serial.print(_charger.remoteInhibited() ? F("STOP") : F("AUTO"));
+
+  sendTempSyncFields();
+  _serial.println();
 }
 
 void Command::sendBattery() {
@@ -234,7 +334,7 @@ void Command::sendBattery() {
 }
 
 void Command::sendTemperature() {
-  _serial.print(F("TEMP BATTERY="));
+  _serial.print(F("TEMP EXTERNAL="));
   if (_charger.temperatureValid()) {
     _serial.print(_charger.batteryTemperatureC(), 1);
   } else {
@@ -243,10 +343,15 @@ void Command::sendTemperature() {
 
   _serial.print(F(" NANO="));
   if (_charger.internalTemperatureValid()) {
-    _serial.println(_charger.internalTemperatureC(), 1);
+    _serial.print(_charger.internalTemperatureC(), 1);
   } else {
-    _serial.println(F("INVALID"));
+    _serial.print(F("INVALID"));
   }
+
+  _serial.print(F(" CHARGER="));
+  _serial.print(_charger.chargerEnabled() ? F("ON") : F("OFF"));
+  _serial.print(F(" STATE="));
+  _serial.println(stateToken(_charger.state()));
 }
 
 void Command::sendState() {
@@ -258,8 +363,62 @@ void Command::sendState() {
   _serial.println(_charger.remoteInhibited() ? F("STOP") : F("AUTO"));
 }
 
+void Command::sendTempSyncStatus() {
+  _serial.print(F("TSYNC"));
+  sendTempSyncFields();
+  _serial.print(F(" EXT="));
+  if (_charger.temperatureValid()) {
+    _serial.print(_charger.batteryTemperatureC(), 1);
+  } else {
+    _serial.print(F("INVALID"));
+  }
+  _serial.print(F(" NANO="));
+  if (_charger.internalTemperatureValid()) {
+    _serial.print(_charger.internalTemperatureC(), 1);
+  } else {
+    _serial.print(F("INVALID"));
+  }
+  _serial.print(F(" CHARGER="));
+  _serial.print(_charger.chargerEnabled() ? F("ON") : F("OFF"));
+  _serial.print(F(" STATE="));
+  _serial.println(stateToken(_charger.state()));
+}
+
+void Command::sendTempSyncFields() {
+  _serial.print(F(" TSYNC="));
+  _serial.print(_tempSyncActive ? F("ON") : F("OFF"));
+
+  _serial.print(F(" TDELTA="));
+  if (_tempSyncSamples > 0 && !isnan(_tempSyncCurrentDelta)) {
+    _serial.print(_tempSyncCurrentDelta, 2);
+  } else {
+    _serial.print(F("INVALID"));
+  }
+
+  _serial.print(F(" TAVG="));
+  if (_tempSyncSamples > 0 && !isnan(_tempSyncAverageDelta)) {
+    _serial.print(_tempSyncAverageDelta, 2);
+  } else {
+    _serial.print(F("INVALID"));
+  }
+
+  _serial.print(F(" TSAMPLES="));
+  _serial.print(_tempSyncSamples);
+
+  _serial.print(F(" TREADY="));
+  _serial.print(tempSyncReady() ? F("YES") : F("NO"));
+
+  _serial.print(F(" TNEW="));
+  const float newOffset = tempSyncRecommendedOffset();
+  if (!isnan(newOffset)) {
+    _serial.print(newOffset, 2);
+  } else {
+    _serial.print(F("INVALID"));
+  }
+}
+
 void Command::sendHelp() {
-  _serial.println(F("CMDS PING STATUS BATTERY TEMP STATE STOP AUTO HELP"));
+  _serial.println(F("CMDS PING STATUS BATTERY TEMP STATE TSYNC_START TSYNC_STATUS TSYNC_STOP STOP AUTO HELP"));
 }
 
 void Command::sendError(const __FlashStringHelper* message) {
