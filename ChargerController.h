@@ -27,6 +27,7 @@ public:
   float batteryVoltage() const;
   float batteryTemperatureC() const;
   float internalTemperatureC() const;
+  uint16_t internalTemperatureRawAdc() const;
   bool temperatureValid() const;
   bool internalTemperatureValid() const;
   bool chargerEnabled() const;
