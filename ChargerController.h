@@ -13,7 +13,8 @@ enum class ChargerState : uint8_t {
   SENSOR_FAULT,
   INTERNAL_TEMP_FAULT,
   VOLTAGE_FAULT,
-  OVERVOLTAGE_FAULT
+  OVERVOLTAGE_FAULT,
+  REMOTE_OFF
 };
 
 class ChargerController {
@@ -31,6 +32,13 @@ public:
   bool chargerEnabled() const;
   ChargerState state() const;
 
+  // Safe remote control used by Command.cpp.
+  // true  = force charging OFF immediately
+  // false = return to the normal automatic safety logic
+  // There is intentionally no remote force-ON bypass.
+  void setRemoteInhibit(bool inhibit);
+  bool remoteInhibited() const;
+
 private:
   TemperatureSensor _temperature;
   InternalTemperature _internalTemperature;
@@ -39,6 +47,7 @@ private:
   ChargerState _state;
   bool _temperatureLockout;
   bool _internalTemperatureLockout;
+  bool _remoteInhibit;
 
   float _batteryVoltage;
   unsigned long _lastControlMs;
