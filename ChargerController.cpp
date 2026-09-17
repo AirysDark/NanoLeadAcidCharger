@@ -61,7 +61,9 @@ void ChargerController::begin() {
   analogReference(DEFAULT);
 
   Debug::begin();
-  _temperature.begin();
+  if (ENABLE_EXTERNAL_TEMP_SENSOR) {
+    _temperature.begin();
+  }
   if (ENABLE_INTERNAL_TEMP_MONITOR) {
     _internalTemperature.begin();
   }
@@ -77,7 +79,9 @@ void ChargerController::begin() {
 void ChargerController::update() {
   const unsigned long nowMs = millis();
 
-  _temperature.update(nowMs);
+  if (ENABLE_EXTERNAL_TEMP_SENSOR) {
+    _temperature.update(nowMs);
+  }
   if (ENABLE_INTERNAL_TEMP_MONITOR) {
     _internalTemperature.update(nowMs);
   }
@@ -94,7 +98,7 @@ void ChargerController::update() {
     _lastDebugMs = nowMs;
     const unsigned long offForMs = _gateway.enabled() ? 0UL : (nowMs - _lastTurnedOffMs);
     Debug::printStatus(_batteryVoltage,
-                       _temperature.valid(),
+                       ENABLE_EXTERNAL_TEMP_SENSOR && _temperature.valid(),
                        _temperature.celsius(),
                        ENABLE_INTERNAL_TEMP_MONITOR,
                        _internalTemperature.valid(),
@@ -138,7 +142,9 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
-  if (REQUIRE_TEMP_SENSOR && !_temperature.valid()) {
+  if (ENABLE_EXTERNAL_TEMP_SENSOR &&
+      REQUIRE_TEMP_SENSOR &&
+      !_temperature.valid()) {
     setCharger(false, ChargerState::SENSOR_FAULT, nowMs);
     return;
   }
@@ -150,7 +156,7 @@ void ChargerController::runControl(unsigned long nowMs) {
     return;
   }
 
-  if (_temperature.valid()) {
+  if (ENABLE_EXTERNAL_TEMP_SENSOR && _temperature.valid()) {
     if (_temperature.celsius() >= TEMP_CUTOFF_C) {
       _temperatureLockout = true;
     } else if (_temperature.celsius() <= TEMP_RESTART_C) {
@@ -158,7 +164,7 @@ void ChargerController::runControl(unsigned long nowMs) {
     }
   }
 
-  if (_temperatureLockout) {
+  if (ENABLE_EXTERNAL_TEMP_SENSOR && _temperatureLockout) {
     setCharger(false, ChargerState::BATTERY_TEMP_OFF, nowMs);
     return;
   }
@@ -255,7 +261,7 @@ uint16_t ChargerController::internalTemperatureRawAdc() const {
 }
 
 bool ChargerController::temperatureValid() const {
-  return _temperature.valid();
+  return ENABLE_EXTERNAL_TEMP_SENSOR && _temperature.valid();
 }
 
 bool ChargerController::internalTemperatureValid() const {
