@@ -1,0 +1,50 @@
+name: Build Nano firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install AVR core and libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install OneWire
+          arduino-cli lib install DallasTemperature
+
+      - name: Compile Nano firmware
+        run: |
+          mkdir -p build
+          arduino-cli compile \
+            --fqbn arduino:avr:nano:cpu=atmega328old \
+            --output-dir build \
+            .
+
+      - name: Create raw .bin for web updater
+        run: |
+          ELF="$(find build -maxdepth 1 -type f -name '*.elf' | head -n 1)"
+          OBJCOPY="$(find "$HOME/.arduino15/packages/arduino/tools/avr-gcc" -type f -name avr-objcopy | head -n 1)"
+          test -n "$ELF"
+          test -x "$OBJCOPY"
+          "$OBJCOPY" -O binary -R .eeprom "$ELF" build/NanoLeadAcidCharger.bin
+          test "$(stat -c%s build/NanoLeadAcidCharger.bin)" -le 30720
+          ls -lh build/NanoLeadAcidCharger.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NanoLeadAcidCharger-firmware
+          path: |
+            build/NanoLeadAcidCharger.bin
+            build/*.hex
+            build/*.elf
