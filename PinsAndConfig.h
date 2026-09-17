@@ -28,15 +28,7 @@ constexpr uint16_t ADC_MAX_COUNTS = 1023;
 constexpr float BATTERY_VOLTAGE_CALIBRATION = 1.000000f;
 constexpr float BATTERY_VOLTAGE_OFFSET_VOLTS = 0.0000f;
 
-// Voltage-calibration test behaviour.
-// After each entered multimeter reading, the test waits until the Nano's
-// measured battery voltage has risen by at least this much before asking for
-// the next reading.
 constexpr float VOLT_CAL_MIN_STEP_VOLTS = 0.05f;
-
-// All three Nano readings must span at least this much before a result is
-// accepted. This keeps the 3-point fit from being based on nearly identical
-// voltages.
 constexpr float VOLT_CAL_MIN_TOTAL_SPAN_VOLTS = 0.10f;
 constexpr uint8_t VOLT_CAL_REQUIRED_SAMPLES = 3;
 
@@ -65,7 +57,8 @@ constexpr float INTERNAL_TEMP_RESTART_C = 50.0f;
 constexpr float INTERNAL_TEMP_MIN_VALID_C = -20.0f;
 constexpr float INTERNAL_TEMP_MAX_VALID_C = 120.0f;
 
-// ATmega328P internal temperature sensor calibration.
+// ATmega328P internal temperature calibration.
+// TEMP SYNC will calculate replacement values for these four lines.
 constexpr bool INTERNAL_TEMP_USE_RAW_CALIBRATION = true;
 constexpr float INTERNAL_TEMP_CAL_RAW = 319.0f;
 constexpr float INTERNAL_TEMP_CAL_C = 25.0f;
@@ -77,12 +70,21 @@ constexpr uint16_t INTERNAL_TEMP_RAW_MAX_VALID = 500;
 constexpr uint8_t INTERNAL_TEMP_ADC_SAMPLES = 16;
 
 // -------------------- Temperature sync test -------------------
-// START TEMP SYNC:
-//   1) 60 paired samples with charging inhibited
-//   2) wait for normal CHARGING, then 60 paired charging samples
-// Result is shown by the ESP8266 monitor for reflashing.
+// Three-point calibration using the external temperature sensor as the
+// reference while it is temporarily placed beside the Nano inside the case.
+//
+// Point 1: 60 samples with charging held OFF.
+// Point 2: return to AUTO, wait for real charging AND a temperature rise,
+//          then collect another 60 samples.
+// Point 3: wait for another temperature rise while charging, then collect
+//          another 60 samples.
+//
+// A line is fitted through raw internal ADC count vs external reference temp.
+// The web page then gives exact replacement calibration lines for reflashing.
 constexpr unsigned long TEMP_SYNC_SAMPLE_INTERVAL_MS = 1000UL;
-constexpr uint16_t TEMP_SYNC_SAMPLES_PER_PHASE = 60;
+constexpr uint16_t TEMP_SYNC_SAMPLES_PER_POINT = 60;
+constexpr float TEMP_SYNC_MIN_RISE_C = 2.0f;
+constexpr float TEMP_SYNC_MIN_TOTAL_SPAN_C = 4.0f;
 
 // ------------------------- Timing -----------------------------
 constexpr unsigned long CONTROL_INTERVAL_MS = 250UL;
