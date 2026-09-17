@@ -1,6 +1,8 @@
 #include "Command.h"
 #include "ChargerController.h"
 #include <ctype.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace {
@@ -39,13 +41,20 @@ Command::Command(ChargerController& charger)
     _tempSyncChargeAverage(NAN),
     _tempSyncCurrentDelta(NAN),
     _tempSyncFinalAverage(NAN),
-    _tempSyncRecommendedOffset(NAN) {
+    _tempSyncRecommendedOffset(NAN),
+    _voltageCalPhase(VoltageCalPhase::OFF),
+    _voltageCalSamples(0),
+    _voltageCalRecommendedScale(NAN),
+    _voltageCalRecommendedOffset(NAN) {
   _buffer[0] = '\0';
+  for (uint8_t i = 0; i < VOLT_CAL_REQUIRED_SAMPLES; ++i) {
+    _voltageCalNano[i] = NAN;
+    _voltageCalActual[i] = NAN;
+  }
 }
 
 void Command::begin() {
   if (!ENABLE_ESP_COMMANDS) return;
-
   _serial.begin(ESP_COMMAND_BAUD);
   _serial.println(F("READY NANO_LEAD_ACID_CHARGER"));
 }
@@ -58,6 +67,7 @@ void Command::update() {
   }
 
   updateTempSync(millis());
+  updateVoltageCal();
 }
 
 void Command::handleChar(char c) {
@@ -185,6 +195,35 @@ void Command::processLine() {
     return;
   }
 
+  if (strcmp(_buffer, "VCAL START") == 0 || strcmp(_buffer, "VOLT CAL START") == 0) {
+    startVoltageCal();
+    return;
+  }
+
+  if (strncmp(_buffer, "VCAL SAMPLE ", 12) == 0) {
+    const char* valueText = _buffer + 12;
+    char* endPtr = nullptr;
+    const float actualVolts = static_cast<float>(strtod(valueText, &endPtr));
+
+    if (endPtr == valueText || *endPtr != '\0' || isnan(actualVolts)) {
+      sendError(F("VCAL_BAD_NUMBER"));
+      return;
+    }
+
+    addVoltageCalSample(actualVolts);
+    return;
+  }
+
+  if (strcmp(_buffer, "VCAL STATUS") == 0 || strcmp(_buffer, "VOLT CAL STATUS") == 0) {
+    sendVoltageCalStatus();
+    return;
+  }
+
+  if (strcmp(_buffer, "VCAL STOP") == 0 || strcmp(_buffer, "VOLT CAL STOP") == 0) {
+    stopVoltageCal();
+    return;
+  }
+
   if (strcmp(_buffer, "STOP") == 0 ||
       strcmp(_buffer, "OFF") == 0 ||
       strcmp(_buffer, "CHARGE OFF") == 0) {
@@ -211,6 +250,10 @@ void Command::processLine() {
 
   sendError(F("UNKNOWN_COMMAND"));
 }
+
+// ============================================================
+// Temperature sync
+// ============================================================
 
 bool Command::tempSyncActive() const {
   return _tempSyncPhase == TempSyncPhase::BASELINE ||
@@ -240,6 +283,11 @@ void Command::startTempSync() {
     return;
   }
 
+  if (voltageCalActive()) {
+    sendError(F("VCAL_ACTIVE"));
+    return;
+  }
+
   if (_charger.remoteInhibited()) {
     sendError(F("TSYNC_SET_AUTO_FIRST"));
     return;
@@ -257,17 +305,13 @@ void Command::startTempSync() {
   _tempSyncBaselineSamples = 0;
   _tempSyncBaselineSum = 0.0f;
   _tempSyncBaselineAverage = NAN;
-
   _tempSyncChargeSamples = 0;
   _tempSyncChargeSum = 0.0f;
   _tempSyncChargeAverage = NAN;
-
   _tempSyncCurrentDelta = NAN;
   _tempSyncFinalAverage = NAN;
   _tempSyncRecommendedOffset = NAN;
 
-  // Stage 1 must be a true charger-OFF baseline. This is an inhibit only;
-  // it cannot force the charger ON later.
   _charger.setRemoteInhibit(true);
 
   _serial.print(F("OK TSYNC=STARTED PHASE=BASELINE TARGET="));
@@ -277,8 +321,6 @@ void Command::startTempSync() {
 void Command::updateTempSync(unsigned long nowMs) {
   if (!tempSyncActive()) return;
 
-  // Stage transition: after baseline, release the temporary inhibit and wait
-  // for the normal charger logic to actually enter CHARGING.
   if (_tempSyncPhase == TempSyncPhase::WAIT_FOR_CHARGE) {
     if (_charger.chargerEnabled() && _charger.state() == ChargerState::CHARGING) {
       _tempSyncPhase = TempSyncPhase::CHARGING;
@@ -292,11 +334,8 @@ void Command::updateTempSync(unsigned long nowMs) {
   _tempSyncLastSampleMs = nowMs;
 
   if (!_charger.temperatureValid() || !_charger.internalTemperatureValid()) return;
-
-  // Baseline samples are accepted only while the charger is definitely OFF.
   if (_tempSyncPhase == TempSyncPhase::BASELINE && _charger.chargerEnabled()) return;
 
-  // Charging samples are accepted only while the Nano says it is really charging.
   if (_tempSyncPhase == TempSyncPhase::CHARGING &&
       (!_charger.chargerEnabled() || _charger.state() != ChargerState::CHARGING)) {
     return;
@@ -315,9 +354,6 @@ void Command::updateTempSync(unsigned long nowMs) {
 
     if (_tempSyncBaselineSamples >= TEMP_SYNC_SAMPLES_PER_PHASE) {
       _tempSyncPhase = TempSyncPhase::WAIT_FOR_CHARGE;
-
-      // Return control to AUTO. The charger will turn on only if all existing
-      // voltage and temperature rules say charging is allowed.
       _charger.setRemoteInhibit(false);
 
       _serial.print(F("TSYNC EVENT=BASELINE_DONE AVG="));
@@ -346,16 +382,12 @@ void Command::completeTempSync() {
     return;
   }
 
-  // Equal 60/60 stages: average the OFF baseline correction and the real
-  // charging correction. This gives one offset representing both conditions.
   _tempSyncFinalAverage =
       (_tempSyncBaselineAverage + _tempSyncChargeAverage) * 0.5f;
   _tempSyncRecommendedOffset =
       INTERNAL_TEMP_CALIBRATION_OFFSET_C + _tempSyncFinalAverage;
 
   _tempSyncPhase = TempSyncPhase::COMPLETE;
-
-  // START is only allowed from AUTO, but preserve the original state anyway.
   _charger.setRemoteInhibit(_tempSyncWasRemoteInhibited);
 
   _serial.print(F("TSYNC RESULT=COMPLETE BASE="));
@@ -370,19 +402,239 @@ void Command::completeTempSync() {
 
 void Command::stopTempSync(bool cancelled) {
   if (!tempSyncActive()) {
-    if (_tempSyncPhase == TempSyncPhase::COMPLETE) {
-      sendTempSyncStatus();
-    } else {
-      _serial.println(F("OK TSYNC=OFF"));
-    }
+    if (_tempSyncPhase == TempSyncPhase::COMPLETE) sendTempSyncStatus();
+    else _serial.println(F("OK TSYNC=OFF"));
     return;
   }
 
   _tempSyncPhase = TempSyncPhase::OFF;
   _charger.setRemoteInhibit(_tempSyncWasRemoteInhibited);
-
   _serial.println(cancelled ? F("OK TSYNC=CANCELLED") : F("OK TSYNC=STOPPED"));
 }
+
+// ============================================================
+// Voltage divider calibration
+// ============================================================
+
+bool Command::voltageCalActive() const {
+  return _voltageCalPhase == VoltageCalPhase::WAIT_INPUT_1 ||
+         _voltageCalPhase == VoltageCalPhase::WAIT_RISE_2 ||
+         _voltageCalPhase == VoltageCalPhase::WAIT_INPUT_2 ||
+         _voltageCalPhase == VoltageCalPhase::WAIT_RISE_3 ||
+         _voltageCalPhase == VoltageCalPhase::WAIT_INPUT_3;
+}
+
+bool Command::voltageCalReady() const {
+  return _voltageCalPhase == VoltageCalPhase::COMPLETE &&
+         !isnan(_voltageCalRecommendedScale) &&
+         !isnan(_voltageCalRecommendedOffset);
+}
+
+const __FlashStringHelper* Command::voltageCalPhaseToken() const {
+  switch (_voltageCalPhase) {
+    case VoltageCalPhase::OFF:          return F("OFF");
+    case VoltageCalPhase::WAIT_INPUT_1: return F("INPUT1");
+    case VoltageCalPhase::WAIT_RISE_2:  return F("WAIT_RISE2");
+    case VoltageCalPhase::WAIT_INPUT_2: return F("INPUT2");
+    case VoltageCalPhase::WAIT_RISE_3:  return F("WAIT_RISE3");
+    case VoltageCalPhase::WAIT_INPUT_3: return F("INPUT3");
+    case VoltageCalPhase::COMPLETE:     return F("COMPLETE");
+    default:                            return F("UNKNOWN");
+  }
+}
+
+void Command::startVoltageCal() {
+  if (voltageCalActive()) {
+    sendError(F("VCAL_ALREADY_RUNNING"));
+    return;
+  }
+
+  if (tempSyncActive()) {
+    sendError(F("TSYNC_ACTIVE"));
+    return;
+  }
+
+  const float nanoVolts = _charger.batteryVoltage();
+  if (isnan(nanoVolts) ||
+      nanoVolts < MIN_VALID_BATTERY_VOLTS ||
+      nanoVolts > MAX_VALID_BATTERY_VOLTS) {
+    sendError(F("VCAL_BATTERY_INVALID"));
+    return;
+  }
+
+  _voltageCalPhase = VoltageCalPhase::WAIT_INPUT_1;
+  _voltageCalSamples = 0;
+  _voltageCalRecommendedScale = NAN;
+  _voltageCalRecommendedOffset = NAN;
+
+  for (uint8_t i = 0; i < VOLT_CAL_REQUIRED_SAMPLES; ++i) {
+    _voltageCalNano[i] = NAN;
+    _voltageCalActual[i] = NAN;
+  }
+
+  _serial.println(F("OK VCAL=STARTED PHASE=INPUT1 ACTION=ENTER_MULTIMETER_VOLTS"));
+}
+
+void Command::updateVoltageCal() {
+  if (_voltageCalSamples == 0) return;
+
+  const float currentNano = _charger.batteryVoltage();
+  const float previousNano = _voltageCalNano[_voltageCalSamples - 1U];
+
+  if (isnan(currentNano) || isnan(previousNano)) return;
+
+  if (_voltageCalPhase == VoltageCalPhase::WAIT_RISE_2 &&
+      currentNano >= (previousNano + VOLT_CAL_MIN_STEP_VOLTS)) {
+    _voltageCalPhase = VoltageCalPhase::WAIT_INPUT_2;
+    _serial.println(F("VCAL EVENT=RISE_DETECTED PHASE=INPUT2 ACTION=ENTER_MULTIMETER_VOLTS"));
+    return;
+  }
+
+  if (_voltageCalPhase == VoltageCalPhase::WAIT_RISE_3 &&
+      currentNano >= (previousNano + VOLT_CAL_MIN_STEP_VOLTS)) {
+    _voltageCalPhase = VoltageCalPhase::WAIT_INPUT_3;
+    _serial.println(F("VCAL EVENT=RISE_DETECTED PHASE=INPUT3 ACTION=ENTER_MULTIMETER_VOLTS"));
+  }
+}
+
+void Command::addVoltageCalSample(float actualVolts) {
+  const bool waitingForInput =
+      _voltageCalPhase == VoltageCalPhase::WAIT_INPUT_1 ||
+      _voltageCalPhase == VoltageCalPhase::WAIT_INPUT_2 ||
+      _voltageCalPhase == VoltageCalPhase::WAIT_INPUT_3;
+
+  if (!waitingForInput) {
+    sendError(F("VCAL_NOT_READY_FOR_INPUT"));
+    return;
+  }
+
+  if (actualVolts < MIN_VALID_BATTERY_VOLTS ||
+      actualVolts > MAX_VALID_BATTERY_VOLTS ||
+      isnan(actualVolts)) {
+    sendError(F("VCAL_ACTUAL_OUT_OF_RANGE"));
+    return;
+  }
+
+  const float nanoVolts = _charger.batteryVoltage();
+  if (nanoVolts < MIN_VALID_BATTERY_VOLTS ||
+      nanoVolts > MAX_VALID_BATTERY_VOLTS ||
+      isnan(nanoVolts)) {
+    sendError(F("VCAL_NANO_READING_INVALID"));
+    return;
+  }
+
+  if (_voltageCalSamples > 0) {
+    const float previousNano = _voltageCalNano[_voltageCalSamples - 1U];
+    if (nanoVolts < (previousNano + VOLT_CAL_MIN_STEP_VOLTS)) {
+      sendError(F("VCAL_WAIT_FOR_MORE_RISE"));
+      return;
+    }
+  }
+
+  if (_voltageCalSamples >= VOLT_CAL_REQUIRED_SAMPLES) {
+    sendError(F("VCAL_ALREADY_COMPLETE"));
+    return;
+  }
+
+  _voltageCalNano[_voltageCalSamples] = nanoVolts;
+  _voltageCalActual[_voltageCalSamples] = actualVolts;
+  ++_voltageCalSamples;
+
+  _serial.print(F("VCAL SAMPLE="));
+  _serial.print(_voltageCalSamples);
+  _serial.print(F(" NANO="));
+  _serial.print(nanoVolts, 3);
+  _serial.print(F(" ACTUAL="));
+  _serial.println(actualVolts, 3);
+
+  if (_voltageCalSamples == 1U) {
+    _voltageCalPhase = VoltageCalPhase::WAIT_RISE_2;
+    return;
+  }
+
+  if (_voltageCalSamples == 2U) {
+    _voltageCalPhase = VoltageCalPhase::WAIT_RISE_3;
+    return;
+  }
+
+  completeVoltageCal();
+}
+
+void Command::completeVoltageCal() {
+  if (_voltageCalSamples != VOLT_CAL_REQUIRED_SAMPLES) return;
+
+  float minNano = _voltageCalNano[0];
+  float maxNano = _voltageCalNano[0];
+  float sumX = 0.0f;
+  float sumY = 0.0f;
+  float sumXX = 0.0f;
+  float sumXY = 0.0f;
+
+  for (uint8_t i = 0; i < VOLT_CAL_REQUIRED_SAMPLES; ++i) {
+    const float x = _voltageCalNano[i];
+    const float y = _voltageCalActual[i];
+
+    if (x < minNano) minNano = x;
+    if (x > maxNano) maxNano = x;
+
+    sumX += x;
+    sumY += y;
+    sumXX += x * x;
+    sumXY += x * y;
+  }
+
+  if ((maxNano - minNano) < VOLT_CAL_MIN_TOTAL_SPAN_VOLTS) {
+    _voltageCalPhase = VoltageCalPhase::OFF;
+    sendError(F("VCAL_SPAN_TOO_SMALL_RESTART"));
+    return;
+  }
+
+  const float n = static_cast<float>(VOLT_CAL_REQUIRED_SAMPLES);
+  const float denominator = (n * sumXX) - (sumX * sumX);
+  if (fabs(denominator) < 0.000001f) {
+    _voltageCalPhase = VoltageCalPhase::OFF;
+    sendError(F("VCAL_FIT_FAILED_RESTART"));
+    return;
+  }
+
+  // Fit actual = correctionSlope * currentlyReported + correctionIntercept.
+  // Convert that fit back into the two constants used by PinsAndConfig.h so
+  // this still works correctly if the test is rerun after an earlier calibration.
+  const float correctionSlope =
+      ((n * sumXY) - (sumX * sumY)) / denominator;
+  const float correctionIntercept =
+      (sumY - (correctionSlope * sumX)) / n;
+
+  _voltageCalRecommendedScale =
+      correctionSlope * BATTERY_VOLTAGE_CALIBRATION;
+  _voltageCalRecommendedOffset =
+      (correctionSlope * BATTERY_VOLTAGE_OFFSET_VOLTS) + correctionIntercept;
+
+  _voltageCalPhase = VoltageCalPhase::COMPLETE;
+
+  _serial.print(F("VCAL RESULT=COMPLETE SCALE="));
+  _serial.print(_voltageCalRecommendedScale, 6);
+  _serial.print(F(" OFFSET="));
+  _serial.println(_voltageCalRecommendedOffset, 4);
+}
+
+void Command::stopVoltageCal() {
+  if (!voltageCalActive()) {
+    if (_voltageCalPhase == VoltageCalPhase::COMPLETE) sendVoltageCalStatus();
+    else _serial.println(F("OK VCAL=OFF"));
+    return;
+  }
+
+  _voltageCalPhase = VoltageCalPhase::OFF;
+  _voltageCalSamples = 0;
+  _voltageCalRecommendedScale = NAN;
+  _voltageCalRecommendedOffset = NAN;
+  _serial.println(F("OK VCAL=CANCELLED"));
+}
+
+// ============================================================
+// Replies / telemetry
+// ============================================================
 
 void Command::sendStatus() {
   _serial.print(F("STATUS BAT="));
@@ -406,12 +658,13 @@ void Command::sendStatus() {
   _serial.print(_charger.remoteInhibited() ? F("STOP") : F("AUTO"));
 
   sendTempSyncFields();
+  sendVoltageCalFields();
   _serial.println();
 }
 
 void Command::sendBattery() {
   _serial.print(F("BATTERY VOLTS="));
-  _serial.println(_charger.batteryVoltage(), 2);
+  _serial.println(_charger.batteryVoltage(), 3);
 }
 
 void Command::sendTemperature() {
@@ -456,42 +709,69 @@ void Command::sendTempSyncStatus() {
 void Command::sendTempSyncFields() {
   _serial.print(F(" TSYNC="));
   _serial.print(tempSyncActive() ? F("ON") : F("OFF"));
-
   _serial.print(F(" TPHASE="));
   _serial.print(tempSyncPhaseToken());
-
   _serial.print(F(" TDELTA="));
   if (!isnan(_tempSyncCurrentDelta)) _serial.print(_tempSyncCurrentDelta, 2);
   else _serial.print(F("INVALID"));
-
   _serial.print(F(" TBASE="));
   if (!isnan(_tempSyncBaselineAverage)) _serial.print(_tempSyncBaselineAverage, 2);
   else _serial.print(F("INVALID"));
-
   _serial.print(F(" TBSAMP="));
   _serial.print(_tempSyncBaselineSamples);
-
   _serial.print(F(" TCHG="));
   if (!isnan(_tempSyncChargeAverage)) _serial.print(_tempSyncChargeAverage, 2);
   else _serial.print(F("INVALID"));
-
   _serial.print(F(" TCSAMP="));
   _serial.print(_tempSyncChargeSamples);
-
   _serial.print(F(" TFINAL="));
   if (!isnan(_tempSyncFinalAverage)) _serial.print(_tempSyncFinalAverage, 2);
   else _serial.print(F("INVALID"));
-
   _serial.print(F(" TREADY="));
   _serial.print(tempSyncReady() ? F("YES") : F("NO"));
-
   _serial.print(F(" TNEW="));
   if (!isnan(_tempSyncRecommendedOffset)) _serial.print(_tempSyncRecommendedOffset, 2);
   else _serial.print(F("INVALID"));
 }
 
+void Command::sendVoltageCalStatus() {
+  _serial.print(F("VCAL_STATUS BAT="));
+  _serial.print(_charger.batteryVoltage(), 3);
+  sendVoltageCalFields();
+  _serial.println();
+}
+
+void Command::sendVoltageCalFields() {
+  _serial.print(F(" VCAL="));
+  _serial.print(voltageCalActive() ? F("ON") : F("OFF"));
+  _serial.print(F(" VPHASE="));
+  _serial.print(voltageCalPhaseToken());
+  _serial.print(F(" VSAMP="));
+  _serial.print(_voltageCalSamples);
+
+  _serial.print(F(" VTARGET="));
+  if ((_voltageCalPhase == VoltageCalPhase::WAIT_RISE_2 ||
+       _voltageCalPhase == VoltageCalPhase::WAIT_RISE_3) &&
+      _voltageCalSamples > 0) {
+    _serial.print(_voltageCalNano[_voltageCalSamples - 1U] + VOLT_CAL_MIN_STEP_VOLTS, 3);
+  } else {
+    _serial.print(F("INVALID"));
+  }
+
+  _serial.print(F(" VREADY="));
+  _serial.print(voltageCalReady() ? F("YES") : F("NO"));
+
+  _serial.print(F(" VSCALE="));
+  if (!isnan(_voltageCalRecommendedScale)) _serial.print(_voltageCalRecommendedScale, 6);
+  else _serial.print(F("INVALID"));
+
+  _serial.print(F(" VOFF="));
+  if (!isnan(_voltageCalRecommendedOffset)) _serial.print(_voltageCalRecommendedOffset, 4);
+  else _serial.print(F("INVALID"));
+}
+
 void Command::sendHelp() {
-  _serial.println(F("CMDS PING STATUS BATTERY TEMP STATE TSYNC_START TSYNC_STATUS TSYNC_STOP STOP AUTO HELP"));
+  _serial.println(F("CMDS PING STATUS BATTERY TEMP STATE TSYNC_START TSYNC_STATUS TSYNC_STOP VCAL_START VCAL_SAMPLE_<VOLTS> VCAL_STATUS VCAL_STOP STOP AUTO HELP"));
 }
 
 void Command::sendError(const __FlashStringHelper* message) {
