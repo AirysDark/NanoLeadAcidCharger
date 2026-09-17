@@ -199,7 +199,17 @@ void Command::startTempSync() {
   if (tempSyncActive()) { sendError(F("TSYNC_ALREADY_RUNNING")); return; }
   if (voltageCalActive()) { sendError(F("VCAL_ACTIVE")); return; }
   if (_charger.remoteInhibited()) { sendError(F("TSYNC_SET_AUTO_FIRST")); return; }
-  if (!_charger.temperatureValid() || !_charger.internalTemperatureValid()) { sendError(F("TSYNC_SENSOR_INVALID")); return; }
+  const uint16_t internalRaw = _charger.internalTemperatureRawAdc();
+  const bool internalRawValid =
+      internalRaw >= INTERNAL_TEMP_RAW_MIN_VALID &&
+      internalRaw <= INTERNAL_TEMP_RAW_MAX_VALID;
+  // TEMP SYNC fits external reference temperature directly against the raw
+  // internal ADC value. It must therefore be allowed to run even when the old
+  // Celsius calibration itself is currently INVALID.
+  if (!_charger.temperatureValid() || !internalRawValid) {
+    sendError(F("TSYNC_SENSOR_INVALID"));
+    return;
+  }
 
   _tempSyncWasRemoteInhibited = _charger.remoteInhibited();
   _tempSyncPhase = TempSyncPhase::POINT1;
@@ -226,7 +236,11 @@ void Command::addTempSample(uint8_t pointIndex) {
   const float nanoC = _charger.internalTemperatureC();
   const float raw = static_cast<float>(_charger.internalTemperatureRawAdc());
 
-  _tempSyncCurrentDelta = extC - nanoC;
+  // The raw ADC value is what the fit needs. If the old internal calibration
+  // is invalid, keep collecting calibration samples and simply omit the live
+  // external-minus-Nano delta until a valid Celsius value exists.
+  _tempSyncCurrentDelta =
+      _charger.internalTemperatureValid() ? (extC - nanoC) : NAN;
   _tempExtSum[pointIndex] += extC;
   _tempRawSum[pointIndex] += raw;
   ++_tempSamples[pointIndex];
@@ -237,7 +251,11 @@ void Command::addTempSample(uint8_t pointIndex) {
 void Command::updateTempSync(unsigned long nowMs) {
   if (!tempSyncActive()) return;
 
-  if (!_charger.temperatureValid() || !_charger.internalTemperatureValid()) return;
+  const uint16_t internalRaw = _charger.internalTemperatureRawAdc();
+  const bool internalRawValid =
+      internalRaw >= INTERNAL_TEMP_RAW_MIN_VALID &&
+      internalRaw <= INTERNAL_TEMP_RAW_MAX_VALID;
+  if (!_charger.temperatureValid() || !internalRawValid) return;
 
   const float extC = _charger.batteryTemperatureC();
 
@@ -522,6 +540,7 @@ void Command::sendStatus() {
   _serial.print(F("STATUS BAT=")); _serial.print(_charger.batteryVoltage(), 2);
   _serial.print(F(" BTEMP=")); if (_charger.temperatureValid()) _serial.print(_charger.batteryTemperatureC(), 1); else _serial.print(F("INVALID"));
   _serial.print(F(" NTEMP=")); if (_charger.internalTemperatureValid()) _serial.print(_charger.internalTemperatureC(), 1); else _serial.print(F("INVALID"));
+  _serial.print(F(" NRAW=")); _serial.print(_charger.internalTemperatureRawAdc());
   _serial.print(F(" CHARGER=")); _serial.print(_charger.chargerEnabled() ? F("ON") : F("OFF"));
   _serial.print(F(" STATE=")); _serial.print(stateToken(_charger.state()));
   _serial.print(F(" MODE=")); _serial.print(_charger.remoteInhibited() ? F("STOP") : F("AUTO"));
