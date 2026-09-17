@@ -21,4 +21,8 @@ private:
   float _temperatureC;
   bool _valid;
   unsigned long _lastReadMs;
+  unsigned long _lastInitAttemptMs;
+
+  void initialiseBus();
+  void readSensor();
 };
