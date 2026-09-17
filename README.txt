@@ -14,6 +14,7 @@ NanoLeadAcidCharger.ino    - main sketch
 PinsAndConfig.h            - pins, thresholds and calibration values
 ChargerController.h/.cpp   - voltage, charging and safety logic
 Command.h/.cpp             - ESP8266 UART commands and calibration tests
+NanoSoftUart.h/.cpp        - local Nano software UART for D8/D9
 gateway.h/.cpp             - charger MOSFET/gate control
 TemperatureSensor.h/.cpp   - external DS18B20 battery-temperature sensor
 InternalTemperature.h/.cpp - ATmega328P internal temperature monitor
@@ -24,6 +25,25 @@ ARDUINO LIBRARIES REQUIRED
 Install with Arduino IDE Library Manager:
   1. OneWire
   2. DallasTemperature
+
+The Nano firmware does NOT depend on Arduino SoftwareSerial anymore. The local
+NanoSoftUart class is used for the ESP8266 command link so ArduinoDroid can
+compile the Nano project even when EspSoftwareSerial is also installed.
+
+ARDUINODROID SOFTWARESERIAL CONFLICT
+------------------------------------
+Older builds used <SoftwareSerial.h>. ArduinoDroid could accidentally combine:
+
+  /files/sdk/lib/SoftwareSerial/src/SoftwareSerial.cpp
+
+with the ESP-specific header:
+
+  /EspSoftwareSerial/src/SoftwareSerial.h
+
+That produced Delegate/GpioCapabilities/template errors while compiling for the
+ATmega328P. The current repository avoids that collision completely by using
+NanoSoftUart.h/.cpp. You do not need to remove EspSoftwareSerial just to build
+this Nano project.
 
 DEFAULT CONNECTIONS
 -------------------
