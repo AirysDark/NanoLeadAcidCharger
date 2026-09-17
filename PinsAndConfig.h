@@ -60,6 +60,8 @@ constexpr float TEMP_CUTOFF_C = 45.0f;
 constexpr float TEMP_RESTART_C = 40.0f;
 constexpr float TEMP_MIN_VALID_C = -20.0f;
 constexpr float TEMP_MAX_VALID_C = 85.0f;
+// If the DS18B20 was not ready at boot, rescan the OneWire bus periodically.
+constexpr unsigned long TEMP_SENSOR_RETRY_INTERVAL_MS = 2000UL;
 
 // ------------- Nano internal / charger temperature -----------
 constexpr bool ENABLE_INTERNAL_TEMP_MONITOR = true;
@@ -72,13 +74,19 @@ constexpr float INTERNAL_TEMP_MAX_VALID_C = 120.0f;
 // ATmega328P internal temperature calibration.
 // TEMP SYNC will calculate replacement values for these four lines.
 constexpr bool INTERNAL_TEMP_USE_RAW_CALIBRATION = true;
-constexpr float INTERNAL_TEMP_CAL_RAW = 319.0f;
+// This Nano is currently reporting a stable raw value around 606-607 at room
+// temperature. Use 606 as the provisional one-point baseline so the internal
+// monitor can operate now; TEMP SYNC can replace this with a measured fit.
+constexpr float INTERNAL_TEMP_CAL_RAW = 606.0f;
 constexpr float INTERNAL_TEMP_CAL_C = 25.0f;
 constexpr float INTERNAL_TEMP_COUNTS_PER_C = 0.93f;
 constexpr float INTERNAL_TEMP_CALIBRATION_OFFSET_C = 0.0f;
 
-constexpr uint16_t INTERNAL_TEMP_RAW_MIN_VALID = 80;
-constexpr uint16_t INTERNAL_TEMP_RAW_MAX_VALID = 500;
+// Keep an electrical sanity window wide enough for clone/variant ATmega328P
+// temperature-sensor offsets. The calculated Celsius limits below still have
+// to pass before the reading is accepted by the charger safety logic.
+constexpr uint16_t INTERNAL_TEMP_RAW_MIN_VALID = 100;
+constexpr uint16_t INTERNAL_TEMP_RAW_MAX_VALID = 900;
 constexpr uint8_t INTERNAL_TEMP_ADC_SAMPLES = 16;
 
 // -------------------- Temperature sync test -------------------
