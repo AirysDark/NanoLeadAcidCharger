@@ -5,23 +5,20 @@
 
 class ChargerController;
 
-// UART command link used by the ESP8266 web/serial bridge.
-// Commands are ASCII text terminated with \n.
-//
-// Safety rule: there is deliberately NO remote FORCE-ON command.
 class Command {
 public:
   explicit Command(ChargerController& charger);
-
   void begin();
   void update();
 
 private:
   enum class TempSyncPhase : uint8_t {
     OFF,
-    BASELINE,
-    WAIT_FOR_CHARGE,
-    CHARGING,
+    POINT1,
+    WAIT_POINT2,
+    POINT2,
+    WAIT_POINT3,
+    POINT3,
     COMPLETE
   };
 
@@ -37,28 +34,23 @@ private:
 
   ChargerController& _charger;
   SoftwareSerial _serial;
-
   char _buffer[COMMAND_BUFFER_SIZE];
   uint8_t _length;
   bool _discardUntilNewline;
 
-  // Two-stage internal-temperature calibration.
   TempSyncPhase _tempSyncPhase;
   bool _tempSyncWasRemoteInhibited;
   unsigned long _tempSyncLastSampleMs;
-  uint16_t _tempSyncBaselineSamples;
-  float _tempSyncBaselineSum;
-  float _tempSyncBaselineAverage;
-  uint16_t _tempSyncChargeSamples;
-  float _tempSyncChargeSum;
-  float _tempSyncChargeAverage;
+  uint16_t _tempSamples[3];
+  float _tempExtSum[3];
+  float _tempRawSum[3];
+  float _tempExtAvg[3];
+  float _tempRawAvg[3];
   float _tempSyncCurrentDelta;
-  float _tempSyncFinalAverage;
-  float _tempSyncRecommendedOffset;
+  float _tempCalRaw;
+  float _tempCalC;
+  float _tempCountsPerC;
 
-  // Three-point battery voltage-divider calibration.
-  // Each pair stores: Nano-reported voltage at the instant the user enters
-  // the multimeter voltage, and the user's actual multimeter voltage.
   VoltageCalPhase _voltageCalPhase;
   uint8_t _voltageCalSamples;
   float _voltageCalNano[VOLT_CAL_REQUIRED_SAMPLES];
@@ -74,6 +66,7 @@ private:
   void startTempSync();
   void stopTempSync(bool cancelled = true);
   void completeTempSync();
+  void addTempSample(uint8_t pointIndex);
   bool tempSyncActive() const;
   bool tempSyncReady() const;
   const __FlashStringHelper* tempSyncPhaseToken() const;
