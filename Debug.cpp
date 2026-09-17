@@ -115,6 +115,7 @@ const __FlashStringHelper* stateName(ChargerState state) {
     case ChargerState::INTERNAL_TEMP_FAULT: return F("NANO TEMP SENSOR FAULT");
     case ChargerState::VOLTAGE_FAULT:       return F("VOLTAGE FAULT");
     case ChargerState::OVERVOLTAGE_FAULT:   return F("OVERVOLTAGE");
+    case ChargerState::REMOTE_OFF:          return F("REMOTE OFF");
     default:                                return F("UNKNOWN");
   }
 }
