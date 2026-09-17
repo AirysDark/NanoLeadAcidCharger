@@ -55,6 +55,10 @@ constexpr unsigned long STATUS_LED_FAST_INTERVAL_MS = 250UL;
 constexpr unsigned long STATUS_LED_FLASH_ON_MS = 100UL;
 
 // ---------------- External battery temperature ---------------
+// true  = read the external DS18B20 on PIN_TEMP_SENSOR
+// false = do not initialise/read it; BatteryTemp reports INVALID and the
+//         external-temperature safety lockout is bypassed.
+constexpr bool ENABLE_EXTERNAL_TEMP_SENSOR = true;
 constexpr bool REQUIRE_TEMP_SENSOR = true;
 constexpr float TEMP_CUTOFF_C = 45.0f;
 constexpr float TEMP_RESTART_C = 40.0f;
