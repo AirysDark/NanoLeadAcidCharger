@@ -17,12 +17,16 @@ public:
 private:
   OneWire _oneWire;
   DallasTemperature _sensors;
+  DeviceAddress _address;
 
   float _temperatureC;
   bool _valid;
+  bool _addressValid;
+  uint8_t _ds18Count;
   unsigned long _lastReadMs;
   unsigned long _lastInitAttemptMs;
 
   void initialiseBus();
   void readSensor();
+  void printBusDiagnostics() const;
 };
