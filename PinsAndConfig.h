@@ -118,6 +118,21 @@ constexpr uint8_t INTERNAL_TEMP_ADC_SAMPLES = 16;
 constexpr unsigned long CONTROL_INTERVAL_MS = 250UL;
 constexpr unsigned long TEMP_INTERVAL_MS = 1000UL;
 constexpr unsigned long INTERNAL_TEMP_INTERVAL_MS = 1000UL;
+
+// -------------------- ESP8266 command link --------------------
+// Dedicated SoftwareSerial link so the Nano USB Serial Monitor remains free.
+// Nano RX receives ESP8266 TX.
+// Nano TX sends to ESP8266 RX through the 5V -> 3.3V divider.
+constexpr bool ENABLE_ESP_COMMANDS = true;
+constexpr uint8_t PIN_ESP_RX = 8;
+constexpr uint8_t PIN_ESP_TX = 9;
+
+// SoftwareSerial is deliberately kept conservative for reliability.
+constexpr unsigned long ESP_COMMAND_BAUD = 9600UL;
+
+// Maximum incoming command length including room for the null terminator.
+constexpr uint8_t COMMAND_BUFFER_SIZE = 48;
+
 // -------------------------- Debug -----------------------------
 // Master switch for all Serial Monitor debugging.
 // true  = Serial Monitor debugging enabled
