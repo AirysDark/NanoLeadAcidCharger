@@ -6,9 +6,7 @@
 class ChargerController;
 
 // UART command link used by the ESP8266 web/serial bridge.
-//
-// Commands are ASCII text terminated with \n. The ESP8266 polls STATUS
-// and the Nano returns one-line machine-friendly responses.
+// Commands are ASCII text terminated with \n.
 //
 // Safety rule: there is deliberately NO remote FORCE-ON command.
 // STOP can inhibit charging immediately; AUTO returns control to the normal
@@ -21,6 +19,14 @@ public:
   void update();
 
 private:
+  enum class TempSyncPhase : uint8_t {
+    OFF,
+    BASELINE,
+    WAIT_FOR_CHARGE,
+    CHARGING,
+    COMPLETE
+  };
+
   ChargerController& _charger;
   SoftwareSerial _serial;
 
@@ -28,16 +34,21 @@ private:
   uint8_t _length;
   bool _discardUntilNewline;
 
-  // Temperature-sync test state. During a sync the external temperature
-  // sensor is used as the reference next to the Nano inside the charger case.
-  // The charger itself continues to run under its normal safety logic.
-  bool _tempSyncActive;
-  unsigned long _tempSyncStartMs;
+  TempSyncPhase _tempSyncPhase;
+  bool _tempSyncWasRemoteInhibited;
   unsigned long _tempSyncLastSampleMs;
-  uint32_t _tempSyncSamples;
-  float _tempSyncDeltaSum;
+
+  uint16_t _tempSyncBaselineSamples;
+  float _tempSyncBaselineSum;
+  float _tempSyncBaselineAverage;
+
+  uint16_t _tempSyncChargeSamples;
+  float _tempSyncChargeSum;
+  float _tempSyncChargeAverage;
+
   float _tempSyncCurrentDelta;
-  float _tempSyncAverageDelta;
+  float _tempSyncFinalAverage;
+  float _tempSyncRecommendedOffset;
 
   void handleChar(char c);
   void processLine();
@@ -45,9 +56,11 @@ private:
 
   void updateTempSync(unsigned long nowMs);
   void startTempSync();
-  void stopTempSync();
+  void stopTempSync(bool cancelled = true);
+  void completeTempSync();
+  bool tempSyncActive() const;
   bool tempSyncReady() const;
-  float tempSyncRecommendedOffset() const;
+  const __FlashStringHelper* tempSyncPhaseToken() const;
 
   void sendStatus();
   void sendBattery();
