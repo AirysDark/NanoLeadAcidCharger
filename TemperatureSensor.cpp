@@ -6,16 +6,21 @@ TemperatureSensor::TemperatureSensor(uint8_t pin)
     _sensors(&_oneWire),
     _temperatureC(NAN),
     _valid(false),
-    _lastReadMs(0) {
+    _lastReadMs(0),
+    _lastInitAttemptMs(0) {
 }
 
-void TemperatureSensor::begin() {
+void TemperatureSensor::initialiseBus() {
+  _lastInitAttemptMs = millis();
   _sensors.begin();
+
   // 10-bit is plenty for charger protection and shortens conversion time.
   _sensors.setResolution(10);
+}
 
+void TemperatureSensor::readSensor() {
   _sensors.requestTemperatures();
-  float t = _sensors.getTempCByIndex(0);
+  const float t = _sensors.getTempCByIndex(0);
 
   _valid = (t != DEVICE_DISCONNECTED_C) &&
            !isnan(t) &&
@@ -24,7 +29,14 @@ void TemperatureSensor::begin() {
 
   if (_valid) {
     _temperatureC = t;
+  } else {
+    _temperatureC = NAN;
   }
+}
+
+void TemperatureSensor::begin() {
+  initialiseBus();
+  readSensor();
   _lastReadMs = millis();
 }
 
@@ -34,17 +46,16 @@ void TemperatureSensor::update(unsigned long nowMs) {
   }
 
   _lastReadMs = nowMs;
-  _sensors.requestTemperatures();
-  float t = _sensors.getTempCByIndex(0);
 
-  _valid = (t != DEVICE_DISCONNECTED_C) &&
-           !isnan(t) &&
-           (t >= TEMP_MIN_VALID_C) &&
-           (t <= TEMP_MAX_VALID_C);
-
-  if (_valid) {
-    _temperatureC = t;
+  // DallasTemperature discovers devices during begin(). If the sensor was
+  // disconnected, powered late, or missed during startup, periodically rescan
+  // the OneWire bus instead of remaining INVALID until the Nano is reset.
+  if (!_valid &&
+      (nowMs - _lastInitAttemptMs) >= TEMP_SENSOR_RETRY_INTERVAL_MS) {
+    initialiseBus();
   }
+
+  readSensor();
 }
 
 bool TemperatureSensor::valid() const {
