@@ -213,6 +213,10 @@ float ChargerController::internalTemperatureC() const {
   return _internalTemperature.celsius();
 }
 
+uint16_t ChargerController::internalTemperatureRawAdc() const {
+  return _internalTemperature.rawAdc();
+}
+
 bool ChargerController::temperatureValid() const {
   return _temperature.valid();
 }
