@@ -9,7 +9,8 @@
 constexpr uint8_t PIN_CHARGE_MOSFET = 5;
 constexpr uint8_t PIN_BATTERY_VOLTAGE = A0;
 constexpr uint8_t PIN_TEMP_SENSOR = 3;
-constexpr uint8_t PIN_STATUS_LED = 9;
+constexpr uint8_t PIN_POWER_LED = 9;
+constexpr uint8_t PIN_CHARGE_PROGRESS_LED = 6;
 
 // -------------------- MOSFET behaviour -----------------------
 constexpr bool CHARGE_CONTROL_ACTIVE_HIGH = true;
@@ -42,18 +43,19 @@ constexpr float MIN_VALID_BATTERY_VOLTS = 8.0f;
 constexpr float MAX_VALID_BATTERY_VOLTS = 16.0f;
 constexpr unsigned long MIN_OFF_TIME_MS = 60000UL;
 
-// ---------------------- Status LED ---------------------------
-// D9 LED behaviour:
-//   Nano powered, not charging = solid full brightness
-//   Charging = smooth pulse from fully OFF to full brightness
-//   Lower battery voltage = slower pulse
-//   Near full = faster pulse
-constexpr float STATUS_LED_SLOW_VOLTAGE = 12.00f;
-constexpr float STATUS_LED_FAST_VOLTAGE = CHARGE_CUTOFF_VOLTS;
-constexpr unsigned long STATUS_LED_SLOW_INTERVAL_MS = 2000UL;
-constexpr unsigned long STATUS_LED_FAST_INTERVAL_MS = 250UL;
-constexpr uint8_t STATUS_LED_MIN_BRIGHTNESS = 0;
-constexpr uint8_t STATUS_LED_MAX_BRIGHTNESS = 255;
+// ---------------------- Indicator LEDs -----------------------
+// D9 = dedicated power LED: solid ON whenever the Nano is powered.
+// D6 = dedicated charging-progress LED:
+//      charging OFF = LED OFF
+//      charging ON  = fades 0 -> 255 -> 0
+//      lower battery voltage = slower pulse
+//      near full = faster pulse
+constexpr float CHARGE_LED_SLOW_VOLTAGE = 12.00f;
+constexpr float CHARGE_LED_FAST_VOLTAGE = CHARGE_CUTOFF_VOLTS;
+constexpr unsigned long CHARGE_LED_SLOW_INTERVAL_MS = 2000UL;
+constexpr unsigned long CHARGE_LED_FAST_INTERVAL_MS = 250UL;
+constexpr uint8_t CHARGE_LED_MIN_BRIGHTNESS = 0;
+constexpr uint8_t CHARGE_LED_MAX_BRIGHTNESS = 255;
 
 // ---------------- External battery temperature ---------------
 // true  = read the external DS18B20 on PIN_TEMP_SENSOR
