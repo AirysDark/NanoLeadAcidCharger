@@ -4,34 +4,32 @@
 
 namespace {
 unsigned long statusLedIntervalMs(float batteryVoltage) {
-  if (batteryVoltage <= STATUS_LED_SLOW_VOLTAGE) {
-    return STATUS_LED_SLOW_INTERVAL_MS;
+  if (batteryVoltage <= CHARGE_LED_SLOW_VOLTAGE) {
+    return CHARGE_LED_SLOW_INTERVAL_MS;
   }
 
-  if (batteryVoltage >= STATUS_LED_FAST_VOLTAGE) {
-    return STATUS_LED_FAST_INTERVAL_MS;
+  if (batteryVoltage >= CHARGE_LED_FAST_VOLTAGE) {
+    return CHARGE_LED_FAST_INTERVAL_MS;
   }
 
-  const float voltageSpan = STATUS_LED_FAST_VOLTAGE - STATUS_LED_SLOW_VOLTAGE;
-  const float position = (batteryVoltage - STATUS_LED_SLOW_VOLTAGE) / voltageSpan;
+  const float voltageSpan = CHARGE_LED_FAST_VOLTAGE - CHARGE_LED_SLOW_VOLTAGE;
+  const float position = (batteryVoltage - CHARGE_LED_SLOW_VOLTAGE) / voltageSpan;
   const float intervalSpan =
-      static_cast<float>(STATUS_LED_SLOW_INTERVAL_MS - STATUS_LED_FAST_INTERVAL_MS);
+      static_cast<float>(CHARGE_LED_SLOW_INTERVAL_MS - CHARGE_LED_FAST_INTERVAL_MS);
 
   return static_cast<unsigned long>(
-      static_cast<float>(STATUS_LED_SLOW_INTERVAL_MS) - (position * intervalSpan));
+      static_cast<float>(CHARGE_LED_SLOW_INTERVAL_MS) - (position * intervalSpan));
 }
 
-void updateStatusLed(bool charging, float batteryVoltage, unsigned long nowMs) {
-  // Whenever the Nano is powered but the charger is not actively charging,
-  // leave the external D9 LED at full brightness as the power indicator.
+void updateChargeProgressLed(bool charging, float batteryVoltage, unsigned long nowMs) {
+  // Dedicated D6 charge-progress LED. Keep it OFF whenever charging is not active.
   if (!charging) {
-    analogWrite(PIN_STATUS_LED, STATUS_LED_MAX_BRIGHTNESS);
+    analogWrite(PIN_CHARGE_PROGRESS_LED, 0);
     return;
   }
 
   // While charging, smoothly fade from fully OFF to full brightness and back.
-  // The pulse gets faster as battery voltage rises. PWM keeps the timing
-  // continuous instead of using isolated digital blinks.
+  // The pulse gets faster as battery voltage rises.
   const unsigned long cycleMs = statusLedIntervalMs(batteryVoltage);
   const unsigned long phaseMs = nowMs % cycleMs;
   const unsigned long halfCycleMs = cycleMs / 2UL;
@@ -39,21 +37,21 @@ void updateStatusLed(bool charging, float batteryVoltage, unsigned long nowMs) {
   uint8_t brightness;
   if (phaseMs < halfCycleMs) {
     const unsigned long span =
-        static_cast<unsigned long>(STATUS_LED_MAX_BRIGHTNESS - STATUS_LED_MIN_BRIGHTNESS);
+        static_cast<unsigned long>(CHARGE_LED_MAX_BRIGHTNESS - CHARGE_LED_MIN_BRIGHTNESS);
     brightness = static_cast<uint8_t>(
-        STATUS_LED_MIN_BRIGHTNESS +
+        CHARGE_LED_MIN_BRIGHTNESS +
         ((span * phaseMs) / (halfCycleMs > 0 ? halfCycleMs : 1UL)));
   } else {
     const unsigned long downPhase = phaseMs - halfCycleMs;
     const unsigned long downDuration = cycleMs - halfCycleMs;
     const unsigned long span =
-        static_cast<unsigned long>(STATUS_LED_MAX_BRIGHTNESS - STATUS_LED_MIN_BRIGHTNESS);
+        static_cast<unsigned long>(CHARGE_LED_MAX_BRIGHTNESS - CHARGE_LED_MIN_BRIGHTNESS);
     brightness = static_cast<uint8_t>(
-        STATUS_LED_MAX_BRIGHTNESS -
+        CHARGE_LED_MAX_BRIGHTNESS -
         ((span * downPhase) / (downDuration > 0 ? downDuration : 1UL)));
   }
 
-  analogWrite(PIN_STATUS_LED, brightness);
+  analogWrite(PIN_CHARGE_PROGRESS_LED, brightness);
 }
 }  // namespace
 
@@ -74,8 +72,11 @@ ChargerController::ChargerController()
 void ChargerController::begin() {
   _gateway.begin();
 
-  pinMode(PIN_STATUS_LED, OUTPUT);
-  digitalWrite(PIN_STATUS_LED, HIGH);
+  pinMode(PIN_POWER_LED, OUTPUT);
+  digitalWrite(PIN_POWER_LED, HIGH);
+
+  pinMode(PIN_CHARGE_PROGRESS_LED, OUTPUT);
+  analogWrite(PIN_CHARGE_PROGRESS_LED, 0);
 
   analogReference(DEFAULT);
 
@@ -111,7 +112,9 @@ void ChargerController::update() {
     runControl(nowMs);
   }
 
-  updateStatusLed(_gateway.enabled(), _batteryVoltage, nowMs);
+  // D9 is a dedicated power indicator and remains solid while the Nano is powered.
+  digitalWrite(PIN_POWER_LED, HIGH);
+  updateChargeProgressLed(_gateway.enabled(), _batteryVoltage, nowMs);
 
   if (ENABLE_DEBUG && (nowMs - _lastDebugMs) >= DEBUG_INTERVAL_MS) {
     _lastDebugMs = nowMs;
