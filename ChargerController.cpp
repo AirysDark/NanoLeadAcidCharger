@@ -23,18 +23,37 @@ unsigned long statusLedIntervalMs(float batteryVoltage) {
 
 void updateStatusLed(bool charging, float batteryVoltage, unsigned long nowMs) {
   // Whenever the Nano is powered but the charger is not actively charging,
-  // leave the external D9 LED solid ON as the power indicator.
+  // leave the external D9 LED at full brightness as the power indicator.
   if (!charging) {
-    digitalWrite(PIN_STATUS_LED, HIGH);
+    analogWrite(PIN_STATUS_LED, STATUS_LED_MAX_BRIGHTNESS);
     return;
   }
 
-  // While charging, flash briefly. The interval gets shorter as the battery
-  // voltage rises, so a low battery gives large gaps and a nearly-full battery
-  // flashes quickly.
-  const unsigned long intervalMs = statusLedIntervalMs(batteryVoltage);
-  const unsigned long phaseMs = nowMs % intervalMs;
-  digitalWrite(PIN_STATUS_LED, phaseMs < STATUS_LED_FLASH_ON_MS ? HIGH : LOW);
+  // While charging, never turn the LED fully off. Instead, smoothly pulse
+  // between half brightness and full brightness. The pulse gets faster as
+  // battery voltage rises, so the LED is always visibly alive while charging.
+  const unsigned long cycleMs = statusLedIntervalMs(batteryVoltage);
+  const unsigned long phaseMs = nowMs % cycleMs;
+  const unsigned long halfCycleMs = cycleMs / 2UL;
+
+  uint8_t brightness;
+  if (phaseMs < halfCycleMs) {
+    const unsigned long span =
+        static_cast<unsigned long>(STATUS_LED_MAX_BRIGHTNESS - STATUS_LED_MIN_BRIGHTNESS);
+    brightness = static_cast<uint8_t>(
+        STATUS_LED_MIN_BRIGHTNESS +
+        ((span * phaseMs) / (halfCycleMs > 0 ? halfCycleMs : 1UL)));
+  } else {
+    const unsigned long downPhase = phaseMs - halfCycleMs;
+    const unsigned long downDuration = cycleMs - halfCycleMs;
+    const unsigned long span =
+        static_cast<unsigned long>(STATUS_LED_MAX_BRIGHTNESS - STATUS_LED_MIN_BRIGHTNESS);
+    brightness = static_cast<uint8_t>(
+        STATUS_LED_MAX_BRIGHTNESS -
+        ((span * downPhase) / (downDuration > 0 ? downDuration : 1UL)));
+  }
+
+  analogWrite(PIN_STATUS_LED, brightness);
 }
 }  // namespace
 
