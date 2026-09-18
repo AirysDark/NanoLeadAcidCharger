@@ -45,17 +45,16 @@ constexpr unsigned long MIN_OFF_TIME_MS = 60000UL;
 
 // ---------------------- Indicator LEDs -----------------------
 // D9 = dedicated power LED: solid ON whenever the Nano is powered.
-// D6 = dedicated charging-progress LED:
+// D6 = dedicated blue charging-progress LED:
 //      charging OFF = LED OFF
-//      charging ON  = fades 0 -> 255 -> 0
-//      lower battery voltage = slower pulse
-//      near full = faster pulse
-constexpr float CHARGE_LED_SLOW_VOLTAGE = 12.00f;
-constexpr float CHARGE_LED_FAST_VOLTAGE = CHARGE_CUTOFF_VOLTS;
+//      charging ON  = hard ON/OFF flicker (no PWM fading)
+//      very low battery = slower flicker
+//      approaching 12.0 V = faster flicker
+//      12.0 V and above = fastest flicker
+constexpr float CHARGE_LED_SLOW_VOLTAGE = 8.00f;
+constexpr float CHARGE_LED_FAST_VOLTAGE = 12.00f;
 constexpr unsigned long CHARGE_LED_SLOW_INTERVAL_MS = 2000UL;
 constexpr unsigned long CHARGE_LED_FAST_INTERVAL_MS = 250UL;
-constexpr uint8_t CHARGE_LED_MIN_BRIGHTNESS = 0;
-constexpr uint8_t CHARGE_LED_MAX_BRIGHTNESS = 255;
 
 // ---------------- External battery temperature ---------------
 // true  = read the external DS18B20 on PIN_TEMP_SENSOR
