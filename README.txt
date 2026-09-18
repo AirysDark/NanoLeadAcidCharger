@@ -51,25 +51,28 @@ DEFAULT CONNECTIONS
 Nano D5 = charger cutoff control output
 Nano A0 = battery voltage divider
 Nano D2 = external temperature sensor signal
-Nano D9 = external power / charging-progress LED
+Nano D9 = dedicated power LED
+Nano D6 = dedicated charging-progress LED
 Nano D8 = RX from ESP8266
 Nano D7 = TX to ESP8266
 
-Status LED:
+Power LED:
   Nano D9 -> resistor -> LED anode (+)
   LED cathode (-) -> GND
+  Behaviour: solid ON whenever the Nano is powered.
 
-LED behaviour:
-  Nano powered, not charging = solid full brightness
-  Charging = smooth pulse from fully OFF to full brightness
+Charging-progress LED:
+  Nano D6 -> resistor -> LED anode (+)
+  LED cathode (-) -> GND
+  Charging OFF = LED OFF
+  Charging ON = smooth 0% -> 100% -> 0% pulse
   Lower battery voltage = slower pulse
   Battery voltage closer to 14.40 V = faster pulse
 
-Default LED timing:
-  12.00 V or below = one full dim-to-bright-to-dim cycle every 2000 ms
-  14.40 V or above = one full dim-to-bright-to-dim cycle every 250 ms
+Default charge-progress timing:
+  12.00 V or below = one full off-to-bright-to-off cycle every 2000 ms
+  14.40 V or above = one full off-to-bright-to-off cycle every 250 ms
   Between those voltages = linearly increasing pulse rate
-  Charging LED fades all the way to OFF; minimum PWM brightness is 0/255
 
 Battery divider:
   Battery + -> 33k -> A0 -> 10k -> Battery -
