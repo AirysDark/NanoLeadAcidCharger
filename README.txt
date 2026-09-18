@@ -62,17 +62,19 @@ Power LED:
   Behaviour: solid ON whenever the Nano is powered.
 
 Charging-progress LED:
-  Nano D6 -> resistor -> LED anode (+)
+  Nano D6 -> resistor -> blue LED anode (+)
   LED cathode (-) -> GND
   Charging OFF = LED OFF
-  Charging ON = smooth 0% -> 100% -> 0% pulse
-  Lower battery voltage = slower pulse
-  Battery voltage closer to 14.40 V = faster pulse
+  Charging ON = hard ON/OFF flicker, no PWM fading
+  Very low battery = slower flicker
+  Battery voltage approaching 12.00 V = faster flicker
+  12.00 V and above = fastest flicker
 
 Default charge-progress timing:
-  12.00 V or below = one full off-to-bright-to-off cycle every 2000 ms
-  14.40 V or above = one full off-to-bright-to-off cycle every 250 ms
-  Between those voltages = linearly increasing pulse rate
+  8.00 V or below = one ON/OFF cycle every 2000 ms
+  12.00 V or above = one ON/OFF cycle every 250 ms
+  Between 8.00 V and 12.00 V = linearly increasing flicker rate
+  Each cycle is approximately 50% ON / 50% OFF
 
 Battery divider:
   Battery + -> 33k -> A0 -> 10k -> Battery -
