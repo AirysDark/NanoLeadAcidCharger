@@ -45,14 +45,14 @@ constexpr unsigned long MIN_OFF_TIME_MS = 60000UL;
 // ---------------------- Status LED ---------------------------
 // D9 LED behaviour:
 //   Nano powered, not charging = solid full brightness
-//   Charging = smooth pulse between half brightness and full brightness
+//   Charging = smooth pulse from fully OFF to full brightness
 //   Lower battery voltage = slower pulse
 //   Near full = faster pulse
 constexpr float STATUS_LED_SLOW_VOLTAGE = 12.00f;
 constexpr float STATUS_LED_FAST_VOLTAGE = CHARGE_CUTOFF_VOLTS;
 constexpr unsigned long STATUS_LED_SLOW_INTERVAL_MS = 2000UL;
 constexpr unsigned long STATUS_LED_FAST_INTERVAL_MS = 250UL;
-constexpr uint8_t STATUS_LED_MIN_BRIGHTNESS = 128;
+constexpr uint8_t STATUS_LED_MIN_BRIGHTNESS = 0;
 constexpr uint8_t STATUS_LED_MAX_BRIGHTNESS = 255;
 
 // ---------------- External battery temperature ---------------
