@@ -60,15 +60,16 @@ Status LED:
   LED cathode (-) -> GND
 
 LED behaviour:
-  Nano powered, not charging = solid ON
-  Charging = short flashes
-  Lower battery voltage = larger gaps between flashes
-  Battery voltage closer to 14.40 V = faster flashes
+  Nano powered, not charging = solid full brightness
+  Charging = smooth pulse between half brightness and full brightness
+  Lower battery voltage = slower pulse
+  Battery voltage closer to 14.40 V = faster pulse
 
 Default LED timing:
-  12.00 V or below = one 100 ms flash every 2000 ms
-  14.40 V or above = one 100 ms flash every 250 ms
-  Between those voltages = linearly increasing flash rate
+  12.00 V or below = one full dim-to-bright-to-dim cycle every 2000 ms
+  14.40 V or above = one full dim-to-bright-to-dim cycle every 250 ms
+  Between those voltages = linearly increasing pulse rate
+  Charging LED never goes fully dark; minimum PWM brightness is 128/255
 
 Battery divider:
   Battery + -> 33k -> A0 -> 10k -> Battery -
