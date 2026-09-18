@@ -61,7 +61,7 @@ Status LED:
 
 LED behaviour:
   Nano powered, not charging = solid full brightness
-  Charging = smooth pulse between half brightness and full brightness
+  Charging = smooth pulse from fully OFF to full brightness
   Lower battery voltage = slower pulse
   Battery voltage closer to 14.40 V = faster pulse
 
@@ -69,7 +69,7 @@ Default LED timing:
   12.00 V or below = one full dim-to-bright-to-dim cycle every 2000 ms
   14.40 V or above = one full dim-to-bright-to-dim cycle every 250 ms
   Between those voltages = linearly increasing pulse rate
-  Charging LED never goes fully dark; minimum PWM brightness is 128/255
+  Charging LED fades all the way to OFF; minimum PWM brightness is 0/255
 
 Battery divider:
   Battery + -> 33k -> A0 -> 10k -> Battery -
