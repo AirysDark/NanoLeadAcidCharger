@@ -29,9 +29,9 @@ void updateStatusLed(bool charging, float batteryVoltage, unsigned long nowMs) {
     return;
   }
 
-  // While charging, never turn the LED fully off. Instead, smoothly pulse
-  // between half brightness and full brightness. The pulse gets faster as
-  // battery voltage rises, so the LED is always visibly alive while charging.
+  // While charging, smoothly fade from fully OFF to full brightness and back.
+  // The pulse gets faster as battery voltage rises. PWM keeps the timing
+  // continuous instead of using isolated digital blinks.
   const unsigned long cycleMs = statusLedIntervalMs(batteryVoltage);
   const unsigned long phaseMs = nowMs % cycleMs;
   const unsigned long halfCycleMs = cycleMs / 2UL;
