@@ -22,36 +22,22 @@ unsigned long statusLedIntervalMs(float batteryVoltage) {
 }
 
 void updateChargeProgressLed(bool charging, float batteryVoltage, unsigned long nowMs) {
-  // Dedicated D6 charge-progress LED. Keep it OFF whenever charging is not active.
+  // Dedicated D6 blue charge-progress LED.
+  // Not charging = fully OFF.
   if (!charging) {
-    analogWrite(PIN_CHARGE_PROGRESS_LED, 0);
+    digitalWrite(PIN_CHARGE_PROGRESS_LED, LOW);
     return;
   }
 
-  // While charging, smoothly fade from fully OFF to full brightness and back.
-  // The pulse gets faster as battery voltage rises.
+  // Hard ON/OFF flicker only -- no PWM fading.
+  // The closer the battery gets to 12 V from below, the faster the flicker.
+  // At/above 12 V it stays at the configured fastest flicker rate.
   const unsigned long cycleMs = statusLedIntervalMs(batteryVoltage);
   const unsigned long phaseMs = nowMs % cycleMs;
   const unsigned long halfCycleMs = cycleMs / 2UL;
 
-  uint8_t brightness;
-  if (phaseMs < halfCycleMs) {
-    const unsigned long span =
-        static_cast<unsigned long>(CHARGE_LED_MAX_BRIGHTNESS - CHARGE_LED_MIN_BRIGHTNESS);
-    brightness = static_cast<uint8_t>(
-        CHARGE_LED_MIN_BRIGHTNESS +
-        ((span * phaseMs) / (halfCycleMs > 0 ? halfCycleMs : 1UL)));
-  } else {
-    const unsigned long downPhase = phaseMs - halfCycleMs;
-    const unsigned long downDuration = cycleMs - halfCycleMs;
-    const unsigned long span =
-        static_cast<unsigned long>(CHARGE_LED_MAX_BRIGHTNESS - CHARGE_LED_MIN_BRIGHTNESS);
-    brightness = static_cast<uint8_t>(
-        CHARGE_LED_MAX_BRIGHTNESS -
-        ((span * downPhase) / (downDuration > 0 ? downDuration : 1UL)));
-  }
-
-  analogWrite(PIN_CHARGE_PROGRESS_LED, brightness);
+  digitalWrite(PIN_CHARGE_PROGRESS_LED,
+               phaseMs < halfCycleMs ? HIGH : LOW);
 }
 }  // namespace
 
@@ -76,7 +62,7 @@ void ChargerController::begin() {
   digitalWrite(PIN_POWER_LED, HIGH);
 
   pinMode(PIN_CHARGE_PROGRESS_LED, OUTPUT);
-  analogWrite(PIN_CHARGE_PROGRESS_LED, 0);
+  digitalWrite(PIN_CHARGE_PROGRESS_LED, LOW);
 
   analogReference(DEFAULT);
 
